@@ -504,3 +504,34 @@ $ kubectl get pods
 
 ## **5. Helm を使用したアプリケーションとパッケージ管理**
 
+- Helm チャートをフェッチ
+
+```bash
+$ helm repo add azure-marketplace https://marketplace.azurecr.io/helm/v1/repo
+
+"azure-marketplace" has been added to your repositories
+```
+
+- 追加されたレポジトリを確認
+
+```bash
+$ helm repo list
+
+NAME                    URL
+azure-marketplace       https://marketplace.azurecr.io/helm/v1/repo
+```
+
+- aspnet-core チャートを検索
+
+```bash
+$ helm search repo aspnet
+
+NAME                            CHART VERSION   APP VERSION     DESCRIPTION
+azure-marketplace/aspnet-core   1.3.18          3.1.19          ASP.NET Core is an open-source framework create...
+```
+
+- Helm チャートをデプロイ
+
+```bash
+$ helm install aspnet-webapp azure-marketplace/aspnet-core
+```
