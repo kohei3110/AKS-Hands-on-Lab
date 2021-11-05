@@ -96,16 +96,17 @@ else
     fi
 
     # Display information to use
-    echo "Azure Container Registry Information"
+    # echo "Azure Container Registry Information"
     echo "=================================================================================="
-    cat ~/clouddrive/mslearn-aks/create-acr-exports.txt
+    echo "DONE!!!!!!!!!!!!!!!"
+    # cat ~/clouddrive/mslearn-aks/create-acr-exports.txt
     echo "=================================================================================="
     echo 
     echo
-    echo "Azure Container Kubernetes Cluster Information"
-    echo "=================================================================================="
-    cat ~/clouddrive/mslearn-aks/create-aks-exports.txt
-    echo "=================================================================================="
+    # echo "Azure Container Kubernetes Cluster Information"
+    # echo "=================================================================================="
+    # cat ~/clouddrive/mslearn-aks/create-aks-exports.txt
+    # echo "=================================================================================="
 fi
 
 #Reset variables
