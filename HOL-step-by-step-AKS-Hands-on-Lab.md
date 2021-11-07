@@ -6,20 +6,26 @@ November 2021
 
 <br />
 
-**Prerequisites**
+**Table of Contents**
 
-- Azure Subscription を保有していること
-- Azure CLI を使用可能であること（Cloud Shell でも可）
+- [**1. Azure Kubernetes Service クラスターの作成**](#--1-azure-kubernetes-service-----------)
+- [**2. アプリケーションのデプロイ**](#--2----------------)
+- [**3. アプリケーションへのネットワークアクセスを有効化**](#--3---------------------------)
+- [**4. AKS ノードにおけるコンピューティングコストの最適化**](#--4-aks--------------------------)
+- [**5. Helm を使用したアプリケーションとパッケージ管理**](#--5-helm------------------------)
+  * [5-1. リポジトリからアプリケーションをデプロイ](#5-1---------------------)
+  * [5-2. サンプルチャートを作成しデプロイ](#5-2-----------------)
 
 **Contents**
 
-## **1. Azure Kubernetes クラスターの作成**
+## **1. Azure Kubernetes Service クラスターの作成**
 
 - 環境変数定義
 
 ```bash
 $ export RESOURCE_GROUP=AKS-Hands-on-Lab
 $ export CLUSTER_NAME=aks-contoso-video
+$ export ACR_NAME=acrhandsonlabdcircle
 ```
 
 - AKS クラスターの作成
@@ -379,7 +385,7 @@ $ az aks enable-addons \
     --resource-group $RESOURCE_GROUP
 ```
 
-- kube-system 名前空間に azure ポリシー ポッドがインストールされていること、および gatekeeper-system 名前空間にゲートキーパー ポッドがインストールされていることを確認
+- `kube-system` 名前空間に azure ポリシー ポッドがインストールされていること、および gatekeeper-system 名前空間にゲートキーパー ポッドがインストールされていることを確認
 
 ```bash
 $ kubectl get pods -n kube-system
@@ -444,6 +450,7 @@ $ code policy.yaml
 以下のコードセクションを追記
 
 ```bash
+# policy.yaml
 apiVersion: v1
 kind: Pod
 metadata:
@@ -475,6 +482,7 @@ $ kubectl apply -f policy.yaml
 - マニフェストファイルを以下のように修正
 
 ```bash
+# policy.yaml
 apiVersion: v1
 kind: Pod
 metadata:
@@ -504,34 +512,350 @@ $ kubectl get pods
 
 ## **5. Helm を使用したアプリケーションとパッケージ管理**
 
-- Helm チャートをフェッチ
+### 5-1. リポジトリからアプリケーションをデプロイ
+
+- **prometheus-community** リポジトリを追加
 
 ```bash
-$ helm repo add azure-marketplace https://marketplace.azurecr.io/helm/v1/repo
-
-"azure-marketplace" has been added to your repositories
+$ helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+"prometheus-community" has been added to your repositories
 ```
 
-- 追加されたレポジトリを確認
+- 試しに `README.md` を確認
 
 ```bash
-$ helm repo list
+$ helm show readme prometheus-community/kube-prometheus-stack
+# kube-prometheus-stack
 
-NAME                    URL
-azure-marketplace       https://marketplace.azurecr.io/helm/v1/repo
+Installs the [kube-prometheus stack](https://github.com/prometheus-operator/kube-prometheus), a collection of Kubernetes manifests, ・・・
 ```
 
-- aspnet-core チャートを検索
+- Prometheus をデプロイ
 
 ```bash
-$ helm search repo aspnet
+$ helm install kube-prometheus-stack prometheus-community/kube-prometheus-stack --debug
+・・・
+NOTES:
+kube-prometheus-stack has been installed. Check its status by running:
+  kubectl --namespace dev get pods -l "release=kube-prometheus-stack"
+```
+
+- デプロイされたことを確認
+
+```bash
+$ kubectl get pods -l "release=kube-prometheus-stack"
+NAME                                                   READY   STATUS           RESTARTS   AGE
+kube-prometheus-stack-operator-767bbf894f-xh7xv        1/1     Running          0          104s
+kube-prometheus-stack-prometheus-node-exporter-8hgh9   1/1     Running          0          104s
+kube-prometheus-stack-prometheus-node-exporter-pd4fp   1/1     Running          0          104s
+```
+
+- リリースの確認
+
+```bash
+$ helm list
+NAME                    NAMESPACE       REVISION        UPDATED                                 STATUS          CHART
+        APP VERSION
+kube-prometheus-stack   dev             1               2021-11-07 16:46:45.7126935 +0900 JST   deployed        kube-prometheus-stack-19.2.3 0.50.0
+```
+
+- kube-prometheus の StatefulSet のラベルを確認
+
+```bash
+$ kubectl get sts --show-labels
+NAME                                              READY   AGE     LABELS
+prometheus-kube-prometheus-stack-prometheus       1/1     4m9s    app.kubernetes.io/instance=kube-prometheus-stack,app.kubernetes.io/managed-by=Helm,app.kubernetes.io/part-of=kube-prometheus-stack,app.kubernetes.io/version=19.2.3,app=kube-prometheus-stack-prometheus,chart=kube-prometheus-stack-19.2.3,heritage=Helm,operator.prometheus.io/name=kube-prometheus-stack-prometheus,operator.prometheus.io/shard=0,release=kube-prometheus-stack
+
+$ helm show values prometheus-community/kube-prometheus-stack | grep commonLabels
+commonLabels: {}
+```
+
+- **myLabel: prometheus-test** というラベルを付与
+
+```bash
+$ echo "commonLabels: { myLabel: prometheus-test }" > config.yaml
+
+$ helm upgrade -f config.yaml kube-prometheus-stack prometheus-community/kube-prometheus-stack
+Release "kube-prometheus-stack" has been upgraded. Happy Helming!
+NAME: kube-prometheus-stack
+LAST DEPLOYED: Sun Nov  7 16:57:32 2021
+NAMESPACE: dev
+STATUS: deployed
+REVISION: 2
+NOTES:
+kube-prometheus-stack has been installed. Check its status by running:
+  kubectl --namespace dev get pods -l "release=kube-prometheus-stack"
+
+Visit https://github.com/prometheus-operator/kube-prometheus for instructions on how to create & configure Alertmanager and Prometheus instances using the Operator.
+```
+
+- 確認
+
+```bash
+$ kubectl get sts --show-labels
+NAME                                              READY   AGE   LABELS
+prometheus-kube-prometheus-stack-prometheus       1/1     12m   ・・・
+myLabel=prometheus-test,・・・
+```
+
+- ロールバック
+
+```bash
+$ helm rollback kube-prometheus-stack 1
+Rollback was a success! Happy Helming!
+```
+
+- Revision を確認
+
+```bash
+$ helm history kube-prometheus-stack
+REVISION        UPDATED                         STATUS          CHART                           APP VERSION     DESCRIPTION
+1               Sun Nov  7 16:46:45 2021        superseded      kube-prometheus-stack-19.2.3    0.50.0          Install complete
+2               Sun Nov  7 16:57:32 2021        superseded      kube-prometheus-stack-19.2.3    0.50.0          Upgrade complete
+3               Sun Nov  7 17:01:06 2021        deployed        kube-prometheus-stack-19.2.3    0.50.0          Rollback to 1
+```
+
+- ラベルの確認
+
+```bash
+$ helm get values --revision 1 kube-prometheus-stack
+USER-SUPPLIED VALUES:
+null
+
+$ helm get values --revision 2 kube-prometheus-stack
+USER-SUPPLIED VALUES:
+commonLabels:
+  myLabel: prometheus-test
+
+$ helm get values --revision 3 kube-prometheus-stack
+USER-SUPPLIED VALUES:
+null
+```
+
+- アンインストール
+
+```bash
+$ helm uninstall kube-prometheus-stack
+release "kube-prometheus-stack" uninstalled
+```
+
+- 確認
+
+```bash
+$ helm list
+NAME    NAMESPACE       REVISION        UPDATED STATUS  CHART   APP VERSION
+
+```
+
+
+### 5-2. サンプルチャートを作成しデプロイ
+
+- チャートを作成
+
+```bash
+$ helm create helm-sample
+Creating helm-sample
+```
+
+- 確認
+
+```bash
+$ find helm-sample/
+helm-sample/
+helm-sample/.helmignore
+helm-sample/Chart.yaml
+helm-sample/charts
+helm-sample/templates
+helm-sample/templates/deployment.yaml
+helm-sample/templates/hpa.yaml
+helm-sample/templates/ingress.yaml
+helm-sample/templates/NOTES.txt
+helm-sample/templates/service.yaml
+helm-sample/templates/serviceaccount.yaml
+helm-sample/templates/tests
+helm-sample/templates/tests/test-connection.yaml
+helm-sample/templates/_helpers.tpl
+helm-sample/values.yaml
+```
+
+- インストール前に DRY-RUN
+
+```bash
+$ helm install helm-sample --debug --dry-run ./helm-sample/
+NAME: helm-sample
+LAST DEPLOYED: Sun Nov  7 19:29:29 2021
+NAMESPACE: dev
+STATUS: pending-install
+REVISION: 1
+USER-SUPPLIED VALUES:
+・・・
+```
+
+- インストール（デプロイ）
+
+```bash
+$ helm install helm-sample --debug ./helm-sample/
+・・・
+NOTES:
+1. Get the application URL by running these commands:
+  export POD_NAME=$(kubectl get pods --namespace dev -l "app.kubernetes.io/name=helm-sample,app.kubernetes.io/instance=helm-sample" -o jsonpath="{.items[0].metadata.name}")
+  export CONTAINER_PORT=$(kubectl get pod --namespace dev $POD_NAME -o jsonpath="{.spec.containers[0].ports[0].containerPort}")
+  echo "Visit http://127.0.0.1:8080 to use your application"
+  kubectl --namespace dev port-forward $POD_NAME 8080:$CONTAINER_PORT
+```
+
+- `values.yaml` の以下の値をアンコメント
+
+```bash
+・・・
+autoscaling:
+・・・
+    targetMemoryUtilizationPercentage: 80
+```
+
+- アップグレード前に DRY-RUN
+
+```bash
+$ helm upgrade helm-sample --debug --dry-run ./helm-sample/
+・・・
+autoscaling:
+・・・
+  targetMemoryUtilizationPercentage: 80  ★値が反映されていることを確認
+```
+
+- アップグレード
+
+```bash
+$ helm upgrade helm-sample --debug ./helm-sample/
+```
+
+- Revision の確認
+
+```bash
+$ helm ls
+NAME            NAMESPACE       REVISION        UPDATED                                 STATUS          CHART                   APP VERSION
+helm-sample     dev             2               2021-11-07 19:35:25.0844057 +0900 JST   deployed        helm-sample-0.1.0       1.16.0
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+- Azure Container Registry 作成
+
+```bash
+$ az acr create --name $ACR_NAME --resource-group $RESOURCE_GROUP --sku Standard
+```
+
+- Helm リポジトリの追加
+
+```bash
+$ helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+```
+
+- Helm チャートの検索
+
+```bash
+$ helm search repo ingress-nginx
 
 NAME                            CHART VERSION   APP VERSION     DESCRIPTION
-azure-marketplace/aspnet-core   1.3.18          3.1.19          ASP.NET Core is an open-source framework create...
+ingress-nginx/ingress-nginx     4.0.6           1.0.4           Ingress controller for Kubernetes using NGINX a...
 ```
 
-- Helm チャートをデプロイ
+- Helm グラフで作成されるイメージを ACR にインポート
 
 ```bash
-$ helm install aspnet-webapp azure-marketplace/aspnet-core
+REGISTRY_NAME=<REGISTRY_NAME>
+CONTROLLER_REGISTRY=k8s.gcr.io
+CONTROLLER_IMAGE=ingress-nginx/controller
+CONTROLLER_TAG=v0.48.1
+PATCH_REGISTRY=docker.io
+PATCH_IMAGE=jettech/kube-webhook-certgen
+PATCH_TAG=v1.5.1
+DEFAULTBACKEND_REGISTRY=k8s.gcr.io
+DEFAULTBACKEND_IMAGE=defaultbackend-amd64
+DEFAULTBACKEND_TAG=1.5
+
+az acr import --name $ACR_NAME --source $CONTROLLER_REGISTRY/$CONTROLLER_IMAGE:$CONTROLLER_TAG --image $CONTROLLER_IMAGE:$CONTROLLER_TAG
+az acr import --name $ACR_NAME --source $PATCH_REGISTRY/$PATCH_IMAGE:$PATCH_TAG --image $PATCH_IMAGE:$PATCH_TAG
+az acr import --name $ACR_NAME --source $DEFAULTBACKEND_REGISTRY/$DEFAULTBACKEND_IMAGE:$DEFAULTBACKEND_TAG --image $DEFAULTBACKEND_IMAGE:$DEFAULTBACKEND_TAG
 ```
+
+- Helm チャートの実行
+
+```bash
+ACR_URL=$ACR_NAME.azurecr.io
+
+# Create a namespace for your ingress resources
+kubectl create namespace ingress-basic
+
+# Use Helm to deploy an NGINX ingress controller
+helm install nginx-ingress ingress-nginx/ingress-nginx \
+    --namespace ingress-basic \
+    --set controller.replicaCount=2 \
+    --set controller.nodeSelector."kubernetes\.io/os"=linux \
+    --set controller.image.registry=$ACR_URL \
+    --set controller.image.image=$CONTROLLER_IMAGE \
+    --set controller.image.tag=$CONTROLLER_TAG \
+     --set controller.image.digest="" \
+    --set controller.admissionWebhooks.patch.nodeSelector."kubernetes\.io/os"=linux \
+    --set controller.admissionWebhooks.patch.image.registry=$ACR_URL \
+    --set controller.admissionWebhooks.patch.image.image=$PATCH_IMAGE \
+    --set controller.admissionWebhooks.patch.image.tag=$PATCH_TAG \
+    --set defaultBackend.nodeSelector."kubernetes\.io/os"=linux \
+    --set defaultBackend.image.registry=$ACR_URL \
+    --set defaultBackend.image.image=$DEFAULTBACKEND_IMAGE \
+    --set defaultBackend.image.tag=$DEFAULTBACKEND_TAG
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
