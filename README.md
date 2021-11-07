@@ -26,5 +26,5 @@ November 2021
 - 本リポジトリをローカルに clone
 
 ```bash
-$ git clone 
+$ git clone https://github.com/kohei3110/AKS-Hands-on-Lab.git
 ```
